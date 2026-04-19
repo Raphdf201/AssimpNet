@@ -227,26 +227,41 @@ namespace Assimp.Unmanaged
         /// </summary>
         /// <param name="libPath">Path to the unmanaged DLL.</param>
         /// <returns>True if the library was found and successfully loaded.</returns>
-        public bool LoadLibrary(String libPath)
+        public bool LoadLibrary(string libPath)
         {
-            if(IsLibraryLoaded)
+            if (IsLibraryLoaded) return true;
+
+            // Append extension if missing
+            if (!string.IsNullOrEmpty(libPath) && !Path.HasExtension(libPath))
+                libPath = Path.ChangeExtension(libPath, m_impl.DllExtension);
+
+            // Resolve absolute path
+            string baseDir = Path.GetDirectoryName(
+                Path.GetFullPath(typeof(UnmanagedLibrary).Assembly.Location)
+            );
+
+            libPath = Path.Combine(baseDir, libPath);
+
+            // Clear any previous dlerror
+            UnmanagedLinuxLibraryImplementation.dlerror();
+
+            if (m_impl.LoadLibrary(libPath))
             {
-                //Ignore repeated calls...but do assert
-                System.Diagnostics.Debug.Assert(false, "Library already loaded");
+                m_libraryPath = libPath;
+                OnLibraryLoaded();
                 return true;
             }
 
-            //Automatically append extension if necessary
-            if(!String.IsNullOrEmpty(libPath) && !Path.HasExtension(libPath))
-                libPath = Path.ChangeExtension(libPath, m_impl.DllExtension);
-
-            if(m_impl.LoadLibrary(libPath))
+            // Retrieve dlerror message
+            IntPtr errPtr = UnmanagedLinuxLibraryImplementation.dlerror();
+            if (errPtr != IntPtr.Zero)
             {
-                m_libraryPath = libPath;
-
-                OnLibraryLoaded();
-
-                return true;
+                string errMsg = Marshal.PtrToStringAnsi(errPtr);
+                Console.WriteLine("DLERROR: " + errMsg);
+            }
+            else
+            {
+                Console.WriteLine("DLERROR: Unknown error (dlerror returned null)");
             }
 
             return false;
@@ -670,7 +685,7 @@ namespace Assimp.Unmanaged
             private static extern int dlclose(IntPtr handle);
 
             [DllImport("libdl.so.2")]
-            private static extern IntPtr dlerror();
+            internal static extern IntPtr dlerror();
 
             private const int RTLD_NOW = 2;
 
